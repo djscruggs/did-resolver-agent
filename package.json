@@ -1,0 +1,13 @@
+{
+  "name": "did-resolver-agent",
+  "private": true,
+  "workspaces": [
+    "mcp-server",
+    "demo-agent"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
