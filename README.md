@@ -4,6 +4,8 @@ A chain-agnostic MCP server + demo agent for agent authorization via W3C Verifia
 
 Enables AI agents to prove delegated authority from a human without a central authority.
 
+See [USE_CASES.md](./USE_CASES.md) for real-world scenarios.
+
 ## Architecture
 
 ```
