@@ -79,9 +79,36 @@ Test cases:
 - `tampered` — Tampered VC payload → denied (signature mismatch)
 - `expired` — Expired VC → denied with reason
 
+## Project Structure
+
+```
+did-resolver-agent/
+├── mcp-server/
+│   ├── src/
+│   │   ├── index.ts          # MCP server entry point
+│   │   ├── tools/
+│   │   │   ├── resolve.ts    # resolve_did tool
+│   │   │   ├── verify.ts     # verify_credential tool
+│   │   │   ├── issue.ts      # issue_credential tool
+│   │   │   └── delegate.ts   # check_delegation tool
+│   │   └── lib/
+│   │       ├── crypto.ts     # Ed25519 key generation, signing, verification (pure)
+│   │       ├── vc.ts         # JWT VC issue, parse, verify (pure)
+│   │       └── resolver.ts   # Universal Resolver HTTP client
+│   └── package.json
+├── demo-agent/
+│   ├── src/
+│   │   ├── index.ts          # CLI entry point (valid/tampered/expired scenarios)
+│   │   └── agent.ts          # Claude agent with MCP tool use
+│   └── package.json
+└── package.json              # npm workspace root
+```
+
 ## Why This Matters
 
 Agentic systems need a way to prove they are authorized to act on behalf of a human — without calling a central authority. DIDs + VCs provide the cryptographic primitives: a human can issue a signed, scoped credential to an agent, and any verifier can check it using only the DID document (no central registry).
+
+> Built a chain-agnostic MCP server enabling agents to issue, verify, and act on W3C Verifiable Credentials anchored to decentralized identifiers. Implemented a delegated authorization model allowing humans to grant scoped permissions to AI agents via cryptographically signed credentials, verified without a central authority.
 
 ## References
 

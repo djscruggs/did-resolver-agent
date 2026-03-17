@@ -10,7 +10,6 @@ Two npm workspace packages:
 - `mcp-server/` — MCP server exposing DID/VC tools
 - `demo-agent/` — Claude-powered CLI demo of age-gated access control
 
-See full plan: `plan.md`
 
 ## Stack
 
