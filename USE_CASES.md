@@ -52,15 +52,3 @@ An agent gets a short-lived VC to deploy: `{ environment: "staging", commit_sha:
 
 ### 11. Incident Response (Break Glass)
 An on-call engineer issues an emergency VC: `{ break_glass: true, incident_id: "INC-042", expires: "+4hours" }`. The agent gets elevated access that automatically expires and is fully auditable.
-
----
-
-## Why Not Just Use OAuth?
-
-OAuth requires a central authorization server that both parties trust and can reach. With DIDs + VCs:
-
-- **No central authority** — the issuer's public key is in their DID document, resolvable by anyone
-- **Offline verification** — a verifier can check a VC without calling the issuer
-- **Agent portability** — credentials travel with the agent across systems, sessions, and providers
-- **Cryptographic audit trail** — every authorization decision is tied to a signed credential, not a session log
-- **Composable delegation** — agents can re-issue narrowed credentials to sub-agents, with the full chain verifiable
