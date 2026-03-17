@@ -4,6 +4,20 @@ A chain-agnostic MCP server + demo agent for agent authorization via W3C Verifia
 
 Enables AI agents to prove delegated authority from a human without a central authority.
 
+## Why This Matters
+
+Agentic systems need a way to prove they are authorized to act on behalf of a human without calling a central authority. DIDs + VCs provide the cryptographic primitives: a human can issue a signed, scoped credential to an agent, and any verifier can check it using only the DID document (no central registry).
+
+## Why Not Just Use OAuth?
+
+OAuth requires a central authorization server that both parties trust and can reach. With DIDs + VCs:
+
+- **No central authority** — the issuer's public key is in their DID document, resolvable by anyone
+- **Offline verification** — a verifier can check a VC without calling the issuer
+- **Agent portability** — credentials travel with the agent across systems, sessions, and providers
+- **Cryptographic audit trail** — every authorization decision is tied to a signed credential, not a session log
+- **Composable delegation** — agents can re-issue narrowed credentials to sub-agents, with the full chain verifiable
+
 See [USE_CASES.md](./USE_CASES.md) for real-world scenarios.
 
 ## Architecture
@@ -24,7 +38,7 @@ MCP Server
 
 Two npm workspace packages:
 - `mcp-server/` — MCP server exposing DID/VC tools
-- `demo-agent/` — Claude-powered CLI demo of age-gated access control
+- `demo-agent/` — Claude-powered CLI demo of deployment authorization
 
 ## Stack
 
@@ -69,15 +83,21 @@ npm run start --workspace=demo-agent -- expired
 
 ## Demo Scenario
 
-1. Human DID issues a VC to an agent: `{ age_verified: true, over_21: true }`
-2. Agent presents VC to a simulated resource server
-3. MCP server resolves issuer DID, verifies signature, checks claims
+An engineer issues a short-lived deployment credential to a CI agent:
+
+```json
+{ "environment": "staging", "approved_by": "did:key:z6MkEngineer", "max_replicas": 3 }
+```
+
+1. Engineer's DID signs a VC granting the agent deploy access to staging
+2. Agent presents the VC when attempting a deployment action
+3. MCP server resolves the engineer's DID, verifies the signature, checks claims
 4. Access granted or denied with reason
 
 Test cases:
-- `valid` — Valid VC → granted
-- `tampered` — Tampered VC payload → denied (signature mismatch)
-- `expired` — Expired VC → denied with reason
+- `valid` — Valid, unexpired VC → deployment authorized
+- `tampered` — Payload modified after signing → denied (signature mismatch)
+- `expired` — Short-lived credential past its TTL → denied with expiry reason
 
 ## Project Structure
 
@@ -103,12 +123,6 @@ did-resolver-agent/
 │   └── package.json
 └── package.json              # npm workspace root
 ```
-
-## Why This Matters
-
-Agentic systems need a way to prove they are authorized to act on behalf of a human — without calling a central authority. DIDs + VCs provide the cryptographic primitives: a human can issue a signed, scoped credential to an agent, and any verifier can check it using only the DID document (no central registry).
-
-> Built a chain-agnostic MCP server enabling agents to issue, verify, and act on W3C Verifiable Credentials anchored to decentralized identifiers. Implemented a delegated authorization model allowing humans to grant scoped permissions to AI agents via cryptographically signed credentials, verified without a central authority.
 
 ## References
 
