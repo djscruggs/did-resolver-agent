@@ -2,15 +2,16 @@ import { jest } from "@jest/globals";
 import type { ResolutionResult } from "../lib/resolver.js";
 
 // ESM-native mock — must be called before dynamic imports
-const mockResolveDID = jest.fn<() => Promise<ResolutionResult>>();
+const mockResolveDID = jest.fn<(did: string) => Promise<ResolutionResult>>();
 jest.unstable_mockModule("../lib/resolver.js", () => ({
   resolveDID: mockResolveDID,
 }));
 
 // Dynamic imports after mock registration
-const { generateKeyPair, toBase64url } = await import("../lib/crypto.js");
+const { generateKeyPair, toBase64url, sign } = await import("../lib/crypto.js");
 const { issueCredential } = await import("../lib/vc.js");
 const { checkDelegation } = await import("../tools/delegate.js");
+const { generateChallenge, signingInput } = await import("../lib/challenge.js");
 
 const ISSUER_DID = "did:key:z6MkHuman";
 const AGENT_DID = "did:key:z6MkAgent";
@@ -189,5 +190,121 @@ describe("checkDelegation", () => {
     });
     expect(result.authorized).toBe(false);
     expect(result.reason).toMatch(/malformed/i);
+  });
+});
+
+describe("checkDelegation: predicate claims", () => {
+  let kp: Awaited<ReturnType<typeof generateKeyPair>>;
+
+  beforeEach(async () => {
+    kp = await generateKeyPair();
+    jest.clearAllMocks();
+  });
+
+  it("authorizes when predicate $gte is satisfied", async () => {
+    mockResolver(kp);
+    const vc = await makeVC(kp, { age: 25 });
+    const result = await checkDelegation({
+      agentDid: AGENT_DID,
+      requestedAction: ACTION,
+      vcJwt: vc.jwt,
+      requiredClaims: { age: { $gte: 21 } },
+    });
+    expect(result.authorized).toBe(true);
+  });
+
+  it("denies when predicate $gte is not satisfied", async () => {
+    mockResolver(kp);
+    const vc = await makeVC(kp, { age: 18 });
+    const result = await checkDelegation({
+      agentDid: AGENT_DID,
+      requestedAction: ACTION,
+      vcJwt: vc.jwt,
+      requiredClaims: { age: { $gte: 21 } },
+    });
+    expect(result.authorized).toBe(false);
+    expect(result.reason).toMatch(/age/);
+  });
+
+  it("authorizes with $in predicate", async () => {
+    mockResolver(kp);
+    const vc = await makeVC(kp, { role: "admin" });
+    const result = await checkDelegation({
+      agentDid: AGENT_DID,
+      requestedAction: ACTION,
+      vcJwt: vc.jwt,
+      requiredClaims: { role: { $in: ["admin", "superuser"] } },
+    });
+    expect(result.authorized).toBe(true);
+  });
+});
+
+describe("checkDelegation: authProof", () => {
+  let issuerKp: Awaited<ReturnType<typeof generateKeyPair>>;
+  let agentKp: Awaited<ReturnType<typeof generateKeyPair>>;
+
+  beforeEach(async () => {
+    issuerKp = await generateKeyPair();
+    agentKp = await generateKeyPair();
+    jest.clearAllMocks();
+  });
+
+  function mockResolverForDids(didToKey: Record<string, Awaited<ReturnType<typeof generateKeyPair>>>) {
+    mockResolveDID.mockImplementation(async (did: string) => {
+      const kp = didToKey[did];
+      if (!kp) return { didDocument: null, didResolutionMetadata: { error: "notFound" } };
+      return {
+        didDocument: {
+          id: did,
+          verificationMethod: [{ id: `${did}#key-1`, type: "JsonWebKey2020", controller: did, publicKeyJwk: { kty: "OKP", crv: "Ed25519", x: toBase64url(kp.publicKey) } }],
+        },
+        didResolutionMetadata: {},
+      } as ResolutionResult;
+    });
+  }
+
+  it("authorizes when authProof is valid", async () => {
+    mockResolverForDids({ [ISSUER_DID]: issuerKp, [AGENT_DID]: agentKp });
+    const vc = await issueCredential(AGENT_DID, { over_21: true }, ISSUER_DID, issuerKp, 3600);
+    const token = generateChallenge(AGENT_DID);
+    const sigBytes = await sign(signingInput(token), agentKp.privateKey);
+    const result = await checkDelegation({
+      agentDid: AGENT_DID,
+      requestedAction: ACTION,
+      vcJwt: vc.jwt,
+      authProof: { nonce: token.nonce, issuedAt: token.issuedAt, expiresAt: token.expiresAt, signatureBase64url: toBase64url(sigBytes) },
+    });
+    expect(result.authorized).toBe(true);
+  });
+
+  it("denies when authProof signature is wrong", async () => {
+    const wrongKp = await generateKeyPair();
+    mockResolverForDids({ [ISSUER_DID]: issuerKp, [AGENT_DID]: agentKp });
+    const vc = await issueCredential(AGENT_DID, { over_21: true }, ISSUER_DID, issuerKp, 3600);
+    const token = generateChallenge(AGENT_DID);
+    const sigBytes = await sign(signingInput(token), wrongKp.privateKey); // wrong key
+    const result = await checkDelegation({
+      agentDid: AGENT_DID,
+      requestedAction: ACTION,
+      vcJwt: vc.jwt,
+      authProof: { nonce: token.nonce, issuedAt: token.issuedAt, expiresAt: token.expiresAt, signatureBase64url: toBase64url(sigBytes) },
+    });
+    expect(result.authorized).toBe(false);
+    expect(result.reason).toMatch(/auth/i);
+  });
+
+  it("denies when authProof challenge is expired", async () => {
+    mockResolverForDids({ [ISSUER_DID]: issuerKp, [AGENT_DID]: agentKp });
+    const vc = await issueCredential(AGENT_DID, { over_21: true }, ISSUER_DID, issuerKp, 3600);
+    const expiredToken = { nonce: "n", agentDid: AGENT_DID, issuedAt: 100, expiresAt: 200 };
+    const sigBytes = await sign(signingInput(expiredToken), agentKp.privateKey);
+    const result = await checkDelegation({
+      agentDid: AGENT_DID,
+      requestedAction: ACTION,
+      vcJwt: vc.jwt,
+      authProof: { nonce: expiredToken.nonce, issuedAt: expiredToken.issuedAt, expiresAt: expiredToken.expiresAt, signatureBase64url: toBase64url(sigBytes) },
+    });
+    expect(result.authorized).toBe(false);
+    expect(result.reason).toMatch(/expired|auth/i);
   });
 });

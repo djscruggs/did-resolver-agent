@@ -8,6 +8,8 @@ import { resolveDIDTool } from "../../mcp-server/src/tools/resolve.js";
 import { verifyCredentialTool } from "../../mcp-server/src/tools/verify.js";
 import { issueCredentialTool } from "../../mcp-server/src/tools/issue.js";
 import { checkDelegation } from "../../mcp-server/src/tools/delegate.js";
+import { createChallengeTool, verifyAuthTool } from "../../mcp-server/src/tools/auth.js";
+import { verifyDelegationChainTool } from "../../mcp-server/src/tools/verifyChain.js";
 
 process.on("unhandledRejection", (reason: unknown) => {
   console.error("Unhandled Rejection:", reason);
@@ -50,6 +52,8 @@ const TOOLS: Anthropic.Tool[] = [
         issuerDid: { type: "string" },
         privateKeyBase64url: { type: "string" },
         expiresInSeconds: { type: "number" },
+        audience: { type: "string" },
+        delegatedFrom: { type: "string" },
       },
       required: ["subjectDid", "claims", "issuerDid", "privateKeyBase64url"],
     },
@@ -64,8 +68,57 @@ const TOOLS: Anthropic.Tool[] = [
         requestedAction: { type: "string" },
         vcJwt: { type: "string" },
         requiredClaims: { type: "object" },
+        expectedAudience: { type: "string" },
+        authProof: {
+          type: "object",
+          properties: {
+            nonce: { type: "string" },
+            issuedAt: { type: "number" },
+            expiresAt: { type: "number" },
+            signatureBase64url: { type: "string" },
+          },
+        },
       },
       required: ["agentDid", "requestedAction", "vcJwt"],
+    },
+  },
+  {
+    name: "create_challenge",
+    description: "Generate an authentication challenge for an agent to sign",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        agentDid: { type: "string" },
+        ttlSeconds: { type: "number" },
+      },
+      required: ["agentDid"],
+    },
+  },
+  {
+    name: "verify_auth",
+    description: "Verify an agent's signed challenge response",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        agentDid: { type: "string" },
+        nonce: { type: "string" },
+        issuedAt: { type: "number" },
+        signatureBase64url: { type: "string" },
+        expiresAt: { type: "number" },
+      },
+      required: ["agentDid", "nonce", "issuedAt", "signatureBase64url"],
+    },
+  },
+  {
+    name: "verify_delegation_chain",
+    description: "Verify a chain of delegation VCs from a root issuer down to an agent",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        vcChain: { type: "array", items: { type: "string" } },
+        agentDid: { type: "string" },
+      },
+      required: ["vcChain", "agentDid"],
     },
   },
 ];
@@ -80,6 +133,12 @@ async function callTool(name: string, input: Record<string, unknown>): Promise<u
       return issueCredentialTool(input as unknown as Parameters<typeof issueCredentialTool>[0]);
     case "check_delegation":
       return checkDelegation(input as unknown as Parameters<typeof checkDelegation>[0]);
+    case "create_challenge":
+      return createChallengeTool(input as Parameters<typeof createChallengeTool>[0]);
+    case "verify_auth":
+      return verifyAuthTool(input as unknown as Parameters<typeof verifyAuthTool>[0]);
+    case "verify_delegation_chain":
+      return verifyDelegationChainTool(input as Parameters<typeof verifyDelegationChainTool>[0]);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }

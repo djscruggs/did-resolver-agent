@@ -61,3 +61,52 @@ describe("VC: issue + verify", () => {
     expect(parseCredential("onlytwoparts.nope")).toBeNull();
   });
 });
+
+describe("VC: audience restriction", () => {
+  const RESOURCE_SERVER = "did:web:resource.example.com";
+
+  it("issues VC with audience and parses aud field", async () => {
+    const kp = await generateKeyPair();
+    const vc = await issueCredential(AGENT_DID, { role: "admin" }, ISSUER_DID, kp, undefined, { audience: RESOURCE_SERVER });
+    const payload = parseCredential(vc.jwt);
+    expect(payload?.aud).toBe(RESOURCE_SERVER);
+  });
+
+  it("issues VC with array audience", async () => {
+    const kp = await generateKeyPair();
+    const vc = await issueCredential(AGENT_DID, {}, ISSUER_DID, kp, undefined, { audience: [RESOURCE_SERVER, "did:web:other.example.com"] });
+    const payload = parseCredential(vc.jwt);
+    expect(Array.isArray(payload?.aud)).toBe(true);
+    expect((payload?.aud as string[]).includes(RESOURCE_SERVER)).toBe(true);
+  });
+
+  it("verifies with matching expectedAudience", async () => {
+    const kp = await generateKeyPair();
+    const vc = await issueCredential(AGENT_DID, {}, ISSUER_DID, kp, undefined, { audience: RESOURCE_SERVER });
+    const result = await verifyCredentialJwt(vc.jwt, kp.publicKey, RESOURCE_SERVER);
+    expect(result.valid).toBe(true);
+  });
+
+  it("rejects with mismatched expectedAudience", async () => {
+    const kp = await generateKeyPair();
+    const vc = await issueCredential(AGENT_DID, {}, ISSUER_DID, kp, undefined, { audience: RESOURCE_SERVER });
+    const result = await verifyCredentialJwt(vc.jwt, kp.publicKey, "did:web:wrong.example.com");
+    expect(result.valid).toBe(false);
+    expect(result.reason).toMatch(/audience/i);
+  });
+
+  it("rejects when expectedAudience set but VC has no aud", async () => {
+    const kp = await generateKeyPair();
+    const vc = await issueCredential(AGENT_DID, {}, ISSUER_DID, kp);
+    const result = await verifyCredentialJwt(vc.jwt, kp.publicKey, RESOURCE_SERVER);
+    expect(result.valid).toBe(false);
+    expect(result.reason).toMatch(/audience/i);
+  });
+
+  it("does not check audience when expectedAudience is not set", async () => {
+    const kp = await generateKeyPair();
+    const vc = await issueCredential(AGENT_DID, {}, ISSUER_DID, kp, undefined, { audience: RESOURCE_SERVER });
+    const result = await verifyCredentialJwt(vc.jwt, kp.publicKey); // no expectedAudience
+    expect(result.valid).toBe(true);
+  });
+});

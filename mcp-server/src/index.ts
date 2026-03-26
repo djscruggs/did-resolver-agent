@@ -5,7 +5,9 @@ import { z } from "zod";
 import { resolveDIDTool } from "./tools/resolve.js";
 import { verifyCredentialTool } from "./tools/verify.js";
 import { issueCredentialTool } from "./tools/issue.js";
-import { checkDelegation } from "./tools/delegate.js";
+import { checkDelegation, type CheckDelegationInput } from "./tools/delegate.js";
+import { createChallengeTool, verifyAuthTool } from "./tools/auth.js";
+import { verifyDelegationChainTool } from "./tools/verifyChain.js";
 
 process.on("unhandledRejection", (reason: unknown) => {
   console.error("Unhandled Rejection:", reason);
@@ -48,10 +50,12 @@ server.registerTool(
       issuerDid: z.string(),
       privateKeyBase64url: z.string().describe("Base64url Ed25519 private key (32 bytes)"),
       expiresInSeconds: z.number().optional().describe("Optional TTL in seconds"),
+      audience: z.union([z.string(), z.array(z.string())]).optional().describe("Optional audience restriction"),
+      delegatedFrom: z.string().optional().describe("Optional parent VC JWT hash for delegation chains"),
     },
   },
   async (input) => {
-    const result = await issueCredentialTool(input);
+    const result = await issueCredentialTool(input as Parameters<typeof issueCredentialTool>[0]);
     return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );
@@ -64,11 +68,66 @@ server.registerTool(
       agentDid: z.string(),
       requestedAction: z.string(),
       vcJwt: z.string(),
-      requiredClaims: z.record(z.string(), z.unknown()).optional().describe("Key/value pairs that must be present in the VC claims"),
+      requiredClaims: z.record(z.string(), z.unknown()).optional().describe("Key/value pairs or predicate objects that must be present in the VC claims"),
+      expectedAudience: z.string().optional().describe("Expected audience value in the VC"),
+      authProof: z.object({
+        nonce: z.string(),
+        issuedAt: z.number(),
+        expiresAt: z.number(),
+        signatureBase64url: z.string(),
+      }).optional().describe("Agent authentication proof from create_challenge"),
     },
   },
   async (input) => {
-    const result = await checkDelegation(input);
+    const result = await checkDelegation(input as unknown as CheckDelegationInput);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.registerTool(
+  "create_challenge",
+  {
+    description: "Generate an authentication challenge for an agent to sign",
+    inputSchema: {
+      agentDid: z.string(),
+      ttlSeconds: z.number().optional().describe("Challenge TTL in seconds (default 300)"),
+    },
+  },
+  async (input) => {
+    const result = await createChallengeTool(input);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.registerTool(
+  "verify_auth",
+  {
+    description: "Verify an agent's signed challenge response (authenticate the agent)",
+    inputSchema: {
+      agentDid: z.string(),
+      nonce: z.string(),
+      issuedAt: z.number(),
+      signatureBase64url: z.string(),
+      expiresAt: z.number().optional(),
+    },
+  },
+  async (input) => {
+    const result = await verifyAuthTool(input);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.registerTool(
+  "verify_delegation_chain",
+  {
+    description: "Verify a chain of delegation VCs from a root issuer down to an agent",
+    inputSchema: {
+      vcChain: z.array(z.string()).describe("Array of JWT VCs from root to leaf"),
+      agentDid: z.string().describe("The expected leaf agent DID"),
+    },
+  },
+  async (input) => {
+    const result = await verifyDelegationChainTool(input);
     return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   }
 );

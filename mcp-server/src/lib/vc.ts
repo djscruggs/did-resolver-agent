@@ -15,15 +15,25 @@ export interface VerifiableCredential {
   jwt: string;
 }
 
+export interface CredentialStatus {
+  id: string;
+  type: "StatusList2021Entry";
+  statusPurpose: string;
+  statusListIndex: string;
+  statusListCredential: string;
+}
+
 export interface VCPayload {
   iss: string;       // issuer DID
   sub: string;       // subject DID (agent)
   iat: number;       // issued-at (unix seconds)
   exp?: number;      // expiry (unix seconds)
+  aud?: string | string[];  // audience restriction
   vc: {
     "@context": string[];
     type: string[];
     credentialSubject: VCClaims & { id: string };
+    credentialStatus?: CredentialStatus;
   };
 }
 
@@ -51,7 +61,11 @@ export async function issueCredential(
   claims: VCClaims,
   issuerDid: string,
   keyPair: KeyPair,
-  expiresInSeconds?: number
+  expiresInSeconds?: number,
+  options?: {
+    audience?: string | string[];
+    credentialStatus?: CredentialStatus;
+  }
 ): Promise<VerifiableCredential> {
   const now = Math.floor(Date.now() / 1000);
   const payload: VCPayload = {
@@ -59,10 +73,12 @@ export async function issueCredential(
     sub: subjectDid,
     iat: now,
     ...(expiresInSeconds ? { exp: now + expiresInSeconds } : {}),
+    ...(options?.audience ? { aud: options.audience } : {}),
     vc: {
       "@context": ["https://www.w3.org/2018/credentials/v1"],
       type: ["VerifiableCredential"],
       credentialSubject: { id: subjectDid, ...claims },
+      ...(options?.credentialStatus ? { credentialStatus: options.credentialStatus } : {}),
     },
   };
 
@@ -94,7 +110,8 @@ export function parseCredential(jwt: string): VCPayload | null {
  */
 export async function verifyCredentialJwt(
   jwt: string,
-  publicKey: Uint8Array
+  publicKey: Uint8Array,
+  expectedAudience?: string
 ): Promise<VerifyResult> {
   const parts = jwt.split(".");
   if (parts.length !== 3) {
@@ -127,6 +144,17 @@ export async function verifyCredentialJwt(
       subject: payload.sub,
       reason: `Credential expired at ${new Date(payload.exp * 1000).toISOString()}`,
     };
+  }
+
+  if (expectedAudience !== undefined) {
+    const aud = payload.aud;
+    if (!aud) {
+      return { valid: false, issuer: payload.iss, subject: payload.sub, reason: "VC has no audience but expectedAudience was set" };
+    }
+    const audArray = Array.isArray(aud) ? aud : [aud];
+    if (!audArray.includes(expectedAudience)) {
+      return { valid: false, issuer: payload.iss, subject: payload.sub, reason: `Audience mismatch: expected '${expectedAudience}' not in ${JSON.stringify(aud)}` };
+    }
   }
 
   const { id: _id, ...claims } = payload.vc.credentialSubject;

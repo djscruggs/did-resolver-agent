@@ -1,4 +1,4 @@
-import { issueCredential, type VCClaims, type VerifiableCredential } from "../lib/vc.js";
+import { issueCredential, type VCClaims, type VerifiableCredential, type CredentialStatus } from "../lib/vc.js";
 import { fromBase64url, type KeyPair } from "../lib/crypto.js";
 
 export interface IssueInput {
@@ -9,6 +9,12 @@ export interface IssueInput {
   privateKeyBase64url: string;
   /** Optional TTL in seconds */
   expiresInSeconds?: number;
+  /** Optional audience restriction */
+  audience?: string | string[];
+  /** Optional delegation chain reference */
+  delegatedFrom?: string;
+  /** Optional credential status for revocation support */
+  credentialStatus?: CredentialStatus;
 }
 
 export async function issueCredentialTool(
@@ -18,11 +24,21 @@ export async function issueCredentialTool(
   const { getPublicKeyAsync } = await import("@noble/ed25519");
   const publicKey = await getPublicKeyAsync(privateKey);
   const keyPair: KeyPair = { privateKey, publicKey };
+
+  // Inject delegatedFrom into claims if present
+  const claims: VCClaims = input.delegatedFrom
+    ? { ...input.claims, delegatedFrom: input.delegatedFrom }
+    : input.claims;
+
   return issueCredential(
     input.subjectDid,
-    input.claims,
+    claims,
     input.issuerDid,
     keyPair,
-    input.expiresInSeconds
+    input.expiresInSeconds,
+    {
+      audience: input.audience,
+      credentialStatus: input.credentialStatus,
+    }
   );
 }
