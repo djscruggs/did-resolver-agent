@@ -3,7 +3,6 @@
  * Uses MCP tools (via in-process call) to enforce credential-based access.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import type { MessageParam } from "@anthropic-ai/sdk/resources/messages.js";
 import { resolveDIDTool } from "../../mcp-server/src/tools/resolve.js";
 import { verifyCredentialTool } from "../../mcp-server/src/tools/verify.js";
 import { issueCredentialTool } from "../../mcp-server/src/tools/issue.js";
@@ -148,7 +147,7 @@ export async function runAgent(userPrompt: string): Promise<void> {
   console.log("\n─── Agent starting ───");
   console.log("User:", userPrompt);
 
-  const messages: MessageParam[] = [{ role: "user", content: userPrompt }];
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content: userPrompt }];
 
   while (true) {
     const response = await client.messages.create({
