@@ -27,6 +27,9 @@ Two npm workspace packages:
 | `verify_credential` | Validate VC signature against issuer DID |
 | `issue_credential` | Create a signed VC (Ed25519/JWT) |
 | `check_delegation` | Compose above to authorize an agent action |
+| `create_challenge` | Generate an authentication challenge for an agent to sign |
+| `verify_auth` | Verify an agent's signed challenge response |
+| `verify_delegation_chain` | Verify a chain of delegation VCs from root to agent |
 
 ## Demo Scenario
 
@@ -51,7 +54,7 @@ Test cases:
 
 ### Separate Pure Logic (`src/lib/`) from IO (`src/tools/`)
 
-Pure, side-effect-free business logic lives in `src/lib/` (e.g., `crypto.ts`, `vc.ts`). IO-dependent code (network calls, DID resolution) lives in `src/tools/` or `src/lib/resolver.ts`. Each `src/lib/` file must include a file-level JSDoc comment stating `No IO — testable in isolation`. Tool functions in `src/tools/` compose pure lib functions with IO as thin orchestration layers.
+Pure, side-effect-free business logic lives in `src/lib/` (e.g., `crypto.ts`, `vc.ts`). IO-dependent code (network calls, DID resolution) lives in `src/tools/` or IO boundary files in `src/lib/` (`resolver.ts`, `statusListFetcher.ts`). Each pure `src/lib/` file must include a file-level JSDoc comment stating `No IO — testable in isolation`; IO boundary files use a JSDoc comment describing their IO role. Tool functions in `src/tools/` compose pure lib functions with IO as thin orchestration layers.
 
 ### Tool Function Naming
 
